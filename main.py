@@ -25,6 +25,7 @@ def back_key(markup):
     markup.add(types.KeyboardButton('Назад'))
     markup.add(types.KeyboardButton('Главное меню'))
 
+
 def write_json(date_j):
 
     """ Функция создания json объекта """
@@ -43,13 +44,16 @@ def get_city(message):
         url_loc = "https://hotels4.p.rapidapi.com/locations/v3/search"
 
         querystring = {"q": message.text, "locale": 'ru_RU', "langid": "1033", "siteid": "300000001"}
-
+        print(querystring)
         response_loc = requests.request("GET", url_loc, headers=config.headers, params=querystring)
+        print(response_loc, '- response_loc')
         date_locations = write_json(response_loc)
+
         try:
-            if date_locations.get("rc") == "OK":
-                locations_and_id = [{date_city['regionNames']['fullName']: date_city['gaiaId']} for date_city in
-                                          date_locations["sr"] if 'gaiaId' in date_city]
+            if 'gaiaId' in date_locations["sr"][0]:
+                locations_and_id = [{date_city['regionNames']['fullName']: date_city['gaiaId']}
+                                    for date_city in date_locations["sr"]
+                                    if 'gaiaId' in date_city]
                 print(locations_and_id, '- locations_and_id')
                 markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
                 for i_dict in locations_and_id:
@@ -60,10 +64,14 @@ def get_city(message):
                 bot.register_next_step_handler(message, get_id_and_city, locations_and_id)
 
             else:
-                bot.send_message(message.chat.id, '<b>Ошибка!!</b>\nВведите название города.', parse_mode='html')
+                bot.send_message(message.chat.id, '<b>Санкции!!</b>\n'
+                                                  'Введите название города расположенного вне территории РФ:',
+                                 parse_mode='html')
                 bot.register_next_step_handler(message, get_city)
+
         except AttributeError:
-            bot.send_message(message.chat.id, '<b>Ошибка!!</b>\nВведите название города еще раз:',
+            bot.send_message(message.chat.id, '<b>Ошибка!!</b>\n'
+                                              'Введите название города еще раз:',
                              parse_mode='html')
             bot.register_next_step_handler(message, get_city)
 
@@ -81,7 +89,7 @@ def get_id_and_city(message, locations_and_id):
 
         if result_find['SortOrder_distance'] is False:
             bot.send_message(message.chat.id, text='Выберете дату заезда:', reply_markup=types.ReplyKeyboardRemove())
-            checkIn(message)
+            check_in(message)
         else:
             bot.send_message(message.chat.id, text='<b>Ошибка!!</b>', parse_mode='html')
             get_menu(message)
@@ -95,7 +103,7 @@ def get_id_and_city(message, locations_and_id):
         bot.register_next_step_handler(message, get_id_and_city, locations_and_id)
 
 
-def checkIn(message):
+def check_in(message):
 
     """ Функция для получения даты заезда в отель из телеграмм чата """
 
@@ -118,10 +126,10 @@ def cal(call):
                               call.message.message_id)
         bot.send_message(call.message.chat.id, text='Выберете дату выезда:')
         result_find['CheckIn'] = result
-        checkOut(call.message)
+        check_out(call.message)
 
 
-def checkOut(message):
+def check_out(message):
 
     """ Функция для получения даты выезда из отеля из телеграмм чата """
 
@@ -147,7 +155,7 @@ def cal(call):
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True). \
             add(*(types.KeyboardButton(str(i_num)) for i_num in range(1, 9)), row_width=4)
         back_key(markup)
-        bot.send_message(call.message.chat.id, text='Сколько человек будет проживать(!> 8):', reply_markup=markup)
+        bot.send_message(call.message.chat.id, text='Сколько человек будет проживать(не более 8):', reply_markup=markup)
         bot.register_next_step_handler(call.message, get_resident)
 
 
@@ -160,18 +168,19 @@ def get_resident(message):
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True).\
             add(*(types.KeyboardButton(str(i_num)) for i_num in range(1, 11)), row_width=5)
         back_key(markup)
-        bot.send_message(message.chat.id, text='Сколько отелей показать(!> 10)?', reply_markup=markup)
+        bot.send_message(message.chat.id, text='Сколько отелей показать(не более 10)?', reply_markup=markup)
         bot.register_next_step_handler(message, get_count_hotel)
     elif message.text == 'Назад':
         markup: telebot = types.ReplyKeyboardMarkup(resize_keyboard=True)
         back_key(markup)
         bot.send_message(message.chat.id, text='Дата выезда(day.month.year):', reply_markup=markup)
-        bot.register_next_step_handler(message, checkOut)
+        bot.register_next_step_handler(message, check_out)
     elif message.text == 'Главное меню':
         get_menu(message)
     else:
         bot.send_message(message.chat.id, f'<b>Ошибка!!</b>\nВведите корректное число жильцов:', parse_mode='html')
         bot.register_next_step_handler(message, get_resident)
+
 
 def get_count_hotel(message):
 
@@ -197,7 +206,7 @@ def get_count_hotel(message):
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True). \
             add(*(types.KeyboardButton(str(i_num)) for i_num in range(1, 9)), row_width=4)
         back_key(markup)
-        bot.send_message(message.chat.id, text='Сколько человек будет проживать(Max 8):', reply_markup=markup)
+        bot.send_message(message.chat.id, text='Сколько человек будет проживать(не более 8):', reply_markup=markup)
         bot.register_next_step_handler(message, get_resident)
 
     elif message.text == 'Главное меню':
@@ -211,7 +220,7 @@ def get_count_hotel(message):
 
 def get_address(id_num):
 
-    """ Функция, которая получает адрес отеля"""
+    """ Функция для получения адрес отеля"""
 
     url = "https://hotels4.p.rapidapi.com/properties/v2/detail"
 
@@ -229,6 +238,8 @@ def get_address(id_num):
 
 
 def get_images(id_num):
+
+    """ Функция для получения фотографий отеля"""
 
     url = "https://hotels4.p.rapidapi.com/properties/v2/detail"
 
@@ -249,17 +260,17 @@ def get_images(id_num):
     return img_str
 
 
-def get_photo(message: telebot) -> None:
+def get_photo(message):
 
-    """ Функция, которая спрашивает сколько отелей отобразить в результате поиска """
+    """ Функция спрашивает сколько отелей отобразить вместе с отелем """
 
     if message.text.lower() == 'да':
         result_find['Flag_Photos'] = True
 
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True). \
-            add(*(types.KeyboardButton(str(i_num)) for i_num in range(1, 11)), row_width=5)
+            add(*(types.KeyboardButton(str(i_num)) for i_num in range(1, 6)), row_width=3)
         back_key(markup)
-        bot.send_message(message.from_user.id, text='Сколько фото показать(max 5)?', reply_markup=markup)
+        bot.send_message(message.from_user.id, text='Сколько фото показать(не более 5)?', reply_markup=markup)
         bot.register_next_step_handler(message, get_count_photo)
     elif message.text.lower() == 'нет':
         result_find['Flag_Photos'] = False
@@ -268,7 +279,7 @@ def get_photo(message: telebot) -> None:
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True). \
             add(*(types.KeyboardButton(str(i_num)) for i_num in range(1, 11)), row_width=5)
         back_key(markup)
-        bot.send_message(message.chat.id, text='Сколько отелей показать(max 10)?', reply_markup=markup)
+        bot.send_message(message.chat.id, text='Сколько отелей показать(не более 10)?', reply_markup=markup)
         bot.register_next_step_handler(message, get_count_hotel)
     elif message.text == 'Главное меню':
         get_menu(message)
@@ -277,9 +288,9 @@ def get_photo(message: telebot) -> None:
         bot.register_next_step_handler(message, get_count_hotel)
 
 
-def get_count_photo(message: telebot) -> None:
+def get_count_photo(message):
 
-    """ Функция, которая спрашивает необходимо ли отобразить фото в результате поиска"""
+    """ Функция спрашивает необходимо ли отобразить фото в результате поиска"""
 
     if message.text.isdigit() and int(message.text) > 0:
         count_photo = int(message.text)
@@ -293,9 +304,9 @@ def get_count_photo(message: telebot) -> None:
         get_menu(message)
 
     elif message.text == 'Назад':
-        keyboard: telebot = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-        key_yes: telebot = types.KeyboardButton(text='Да')
-        key_no: telebot = types.KeyboardButton(text='Нет')
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+        key_yes = types.KeyboardButton(text='Да')
+        key_no = types.KeyboardButton(text='Нет')
         keyboard.add(key_yes, key_no)
         bot.send_message(message.chat.id, text='Результат поиска показать с фото?', reply_markup=keyboard)
         bot.register_next_step_handler(message, get_photo)
@@ -305,10 +316,9 @@ def get_count_photo(message: telebot) -> None:
         bot.register_next_step_handler(message, get_count_photo)
 
 
-
 def get_result(message):
 
-    """ Функция, которая выводит результат поиска в чаб бота (ПОКА БЕЗ ФОТО)"""
+    """ Функция, которая выводит результат поиска в чаб бота """
 
     print(result_find, '- result_find')
     bot.send_message(message.chat.id, text=f'<u>Подождите, идет загрузка...</u>',
@@ -334,11 +344,12 @@ def get_result(message):
         "resultsStartingIndex": 0,
         "resultsSize": result_find['PageSize'],
         "sort": result_find['SortOrder'],
-        "filters": {"price": {
-            "max": 99999,
-            "min": 1
-        }}
+        "filters": {
+            "star": result_find['StarsCount']
+        }
+
     }
+
     print(payload, '- payload')
 
     response = requests.request("POST", url_price, json=payload, headers=config.headers)
@@ -364,7 +375,7 @@ def get_result(message):
                         all_price=round(i_hotel['price']['lead']['amount'] *
                                         result_find['Adults'] *
                                         (int((result_find["CheckOut"] - result_find["CheckIn"]).days))),
-                        website='https://www.hotels.com')
+                        website=f'https://www.hotels.com/h{i_hotel["id"]}.Hotel-Information')
 
         if result_find['Flag_Photos']:
             media = get_images(i_hotel["id"])
@@ -378,6 +389,12 @@ def get_result(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton('ОК'))
     bot.send_message(message.chat.id, text=f'<b>Поиск завершен</b>', parse_mode='html', reply_markup=markup)
 
+    bot.register_next_step_handler(message, find_end)
+
+
+def find_end(message):
+    get_menu(message)
+
 
 def get_menu(message):
 
@@ -390,7 +407,9 @@ def get_menu(message):
     button_history = types.KeyboardButton(text='/history')
     button_help = types.KeyboardButton(text='/help')
     markup.add(button_lowprice, button_highprice, button_bestdeal, button_history, button_help)
-    bot.send_message(message.chat.id, text='<b>Главное меню</b>.\nВыберете команду:', reply_markup=markup, parse_mode='html')
+    bot.send_message(message.chat.id, text='<b>Главное меню</b>.\nВыберете команду:',
+                     reply_markup=markup,
+                     parse_mode='html')
 
 
 @bot.message_handler(commands=['start'])
@@ -422,41 +441,46 @@ def command_lowprice(message):
     """ Функция для запуска команды /lowprice """
 
     result_find['SortOrder'] = "PRICE_LOW_TO_HIGH"
-
+    result_find['StarsCount'] = ["10", "20", "30", "40", "50"]
     result_find['SortOrder_distance'] = False
 
     result_find['Command'] = message.text
+    print(result_find['Command'])
     bot.send_message(message.chat.id, text='Введите название города')
 
     bot.register_next_step_handler(message, get_city)
 
 
-
 @bot.message_handler(commands=['highprice'])
-def command_help(message):
+def command_highprice(message):
 
     """ Функция для запуска команды /highprice """
 
-    bot.send_message(message.chat.id, text='/highprice команда!')
+    result_find['SortOrder'] = "PRICE_HIGH_TO_LOW"
+    result_find['StarsCount'] = ["50"]
+    result_find['SortOrder_distance'] = False
 
+    result_find['Command'] = message.text
+    print(result_find['Command'])
+    bot.send_message(message.chat.id, text='Введите название города')
+
+    bot.register_next_step_handler(message, get_city)
 
 
 @bot.message_handler(commands=['bestdeal'])
-def command_help(message):
+def command_bestdeal(message):
 
     """ Функция для запуска команды /bestdeal """
 
     bot.send_message(message.chat.id, text='/bestdeal команда!')
 
 
-
 @bot.message_handler(commands=['history'])
-def command_help(message):
+def command_history(message):
 
     """ Функция для запуска команды /history """
 
     bot.send_message(message.chat.id, text='/history команда!')
-
 
 
 @bot.message_handler(content_types=['text'])
