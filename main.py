@@ -15,6 +15,16 @@ result_find = dict()
 my_step_time = {'y': 'год', 'm': 'месяц', 'd': 'день'}
 
 
+def key_menu(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
+    markup.add(types.KeyboardButton('Главное меню'))
+    bot.send_message(message.chat.id, text='Введите название города', reply_markup=markup)
+
+
+def back_key(markup):
+    markup.add(types.KeyboardButton('Назад'))
+    markup.add(types.KeyboardButton('Главное меню'))
+
 def write_json(date_j):
 
     """ Функция создания json объекта """
@@ -27,37 +37,35 @@ def get_city(message):
 
     """ Функция проверяет наличие ключа/сообщения из чата в библиотеке locations/search """
 
-    result_find['language'] = result_find.get('language', ['en_US', 'M'])
-    result_find['currency'] = result_find.get('currency', ['USD', '$'])
+    if message.text == 'Главное меню':
+        get_menu(message)
+    else:
+        url_loc = "https://hotels4.p.rapidapi.com/locations/v3/search"
 
-    url_loc = "https://hotels4.p.rapidapi.com/locations/v2/search"
+        querystring = {"q": message.text, "locale": 'ru_RU', "langid": "1033", "siteid": "300000001"}
 
-    querystring_loc = {"query": message.text, "locale": result_find['language'][0],
-                             "currency": result_find['currency'][0]}
-    response_loc = requests.request("GET", url_loc, headers=config.headers, params=querystring_loc)
-    date_locations = write_json(response_loc)
-    try:
-        if date_locations.get("moresuggestions") > 0:
-            locations_and_id = [{''.join(re.sub(r"</span>", '', ''.join(re.sub(r"<span class='\w+'>", '',
-                                                                     date_city["caption"])))):
-                                           date_city["destinationId"]} for date_city in
-                                      date_locations["suggestions"][0]["entities"]]
+        response_loc = requests.request("GET", url_loc, headers=config.headers, params=querystring)
+        date_locations = write_json(response_loc)
+        try:
+            if date_locations.get("rc") == "OK":
+                locations_and_id = [{date_city['regionNames']['fullName']: date_city['gaiaId']} for date_city in
+                                          date_locations["sr"] if 'gaiaId' in date_city]
+                print(locations_and_id, '- locations_and_id')
+                markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
+                for i_dict in locations_and_id:
+                    for i_key in i_dict.keys():
+                        markup.add(types.KeyboardButton(i_key))
+                back_key(markup)
+                bot.send_message(message.chat.id, 'Выберете город из списка.', reply_markup=markup)
+                bot.register_next_step_handler(message, get_id_and_city, locations_and_id)
 
-            markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
-            for i_dict in locations_and_id:
-                for i_key in i_dict.keys():
-                    markup.add(types.KeyboardButton(i_key))
-
-            bot.send_message(message.chat.id, 'Выберете город из списка.', reply_markup=markup)
-            bot.register_next_step_handler(message, get_id_and_city, locations_and_id)
-
-        else:
-            bot.send_message(message.chat.id, '<b>Ошибка!!</b>\nВведите название города.', parse_mode='html')
+            else:
+                bot.send_message(message.chat.id, '<b>Ошибка!!</b>\nВведите название города.', parse_mode='html')
+                bot.register_next_step_handler(message, get_city)
+        except AttributeError:
+            bot.send_message(message.chat.id, '<b>Ошибка!!</b>\nВведите название города еще раз:',
+                             parse_mode='html')
             bot.register_next_step_handler(message, get_city)
-    except AttributeError:
-        bot.send_message(message.chat.id, '<b>Ошибка!!</b>\nВведите название города еще раз:',
-                         parse_mode='html')
-        bot.register_next_step_handler(message, get_city)
 
 
 def get_id_and_city(message, locations_and_id):
@@ -68,7 +76,7 @@ def get_id_and_city(message, locations_and_id):
         result_find['Country'] = message.text
         for i_dict in locations_and_id:
             if i_dict.get(message.text) is not None:
-                result_find['DestinationId'] = int(i_dict.get(message.text))
+                result_find['regionId'] = str(i_dict.get(message.text))
                 break
 
         if result_find['SortOrder_distance'] is False:
@@ -77,6 +85,11 @@ def get_id_and_city(message, locations_and_id):
         else:
             bot.send_message(message.chat.id, text='<b>Ошибка!!</b>', parse_mode='html')
             get_menu(message)
+    elif message.text == 'Назад':
+        bot.send_message(message.chat.id, 'Введите название города.', reply_markup=types.ReplyKeyboardRemove())
+        bot.register_next_step_handler(message, get_city)
+    elif message.text == 'Главное меню':
+        get_menu(message)
     else:
         bot.send_message(message.chat.id, text='<b>Ошибка!!</b>\nВыберете город из списка!', parse_mode='html')
         bot.register_next_step_handler(message, get_id_and_city, locations_and_id)
@@ -133,6 +146,7 @@ def cal(call):
         result_find['CheckOut'] = result
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True). \
             add(*(types.KeyboardButton(str(i_num)) for i_num in range(1, 9)), row_width=4)
+        back_key(markup)
         bot.send_message(call.message.chat.id, text='Сколько человек будет проживать(!> 8):', reply_markup=markup)
         bot.register_next_step_handler(call.message, get_resident)
 
@@ -142,11 +156,19 @@ def get_resident(message):
     """ Функция для получения значения жильцов в номере отеля """
 
     if message.text.isdigit() and 9 > int(message.text) > 0:
-        result_find['Adults1'] = int(message.text)
+        result_find['Adults'] = int(message.text)
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True).\
             add(*(types.KeyboardButton(str(i_num)) for i_num in range(1, 11)), row_width=5)
+        back_key(markup)
         bot.send_message(message.chat.id, text='Сколько отелей показать(!> 10)?', reply_markup=markup)
         bot.register_next_step_handler(message, get_count_hotel)
+    elif message.text == 'Назад':
+        markup: telebot = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        back_key(markup)
+        bot.send_message(message.chat.id, text='Дата выезда(day.month.year):', reply_markup=markup)
+        bot.register_next_step_handler(message, checkOut)
+    elif message.text == 'Главное меню':
+        get_menu(message)
     else:
         bot.send_message(message.chat.id, f'<b>Ошибка!!</b>\nВведите корректное число жильцов:', parse_mode='html')
         bot.register_next_step_handler(message, get_resident)
@@ -167,50 +189,121 @@ def get_count_hotel(message):
         key_yes = types.KeyboardButton(text='Да')
         key_no = types.KeyboardButton(text='Нет')
         markup.add(key_yes, key_no)
-
+        back_key(markup)
         bot.send_message(message.chat.id, text='Результат поиска показать с фото?', reply_markup=markup)
-        bot.register_next_step_handler(message, get_result)          #get_photo
+        bot.register_next_step_handler(message, get_photo)
+
+    elif message.text == 'Назад':
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True). \
+            add(*(types.KeyboardButton(str(i_num)) for i_num in range(1, 9)), row_width=4)
+        back_key(markup)
+        bot.send_message(message.chat.id, text='Сколько человек будет проживать(Max 8):', reply_markup=markup)
+        bot.register_next_step_handler(message, get_resident)
+
+    elif message.text == 'Главное меню':
+        get_menu(message)
+
     else:
         bot.send_message(message.chat.id, '<b>Ошибка!!</b>\nВведите корректное число отелей(Max 10):',
                          parse_mode='html')
         bot.register_next_step_handler(message, get_count_hotel)
 
 
-# def get_photo(message):
-#
-#     """ Функция, которая спрашивает сколько отелей отобразить в результате поиска """
-#
-#     if message.text.lower() == 'да':
-#
-#         result_find['Flag_Photos'] = True
-#         markup = types.ReplyKeyboardMarkup(resize_keyboard=True). \
-#             add(*(types.KeyboardButton(str(i_num)) for i_num in range(1, 11)), row_width=5)
-#
-#         bot.send_message(message.from_user.id, text='Сколько фото показать(max 10)?', reply_markup=markup)
-#         bot.register_next_step_handler(message, get_count_photo)
-#     elif message.text.lower() == 'нет':
-#         result_find['Flag_Photos'] = False
-#         get_result(message)
-#     else:
-#         bot.send_message(message.chat.id, text='<b>Ошибка!!</b>\nНе верная команда!', parse_mode='html')
-#         bot.register_next_step_handler(message, get_count_hotel)
+def get_address(id_num):
+
+    """ Функция, которая получает адрес отеля"""
+
+    url = "https://hotels4.p.rapidapi.com/properties/v2/detail"
+
+    payload = {
+        "currency": "USD",
+        "eapid": 1,
+        "locale": "en_US",
+        "siteId": 300000001,
+        "propertyId": id_num
+    }
+
+    response = requests.request("POST", url, json=payload, headers=config.headers)
+    address = write_json(response)
+    return address['data']['propertyInfo']['summary']['location']['address']['addressLine']
 
 
-# def get_count_photo(message):
-#
-#     """ Функция, которая спрашивает необходимо ли отобразить фото в результате поиска"""
-#
-#     if message.text.isdigit() and int(message.text) > 0:
-#         count_photo = int(message.text)
-#         if count_photo >= 10:
-#             count_photo = 10
-#
-#         result_find['Count_photo'] = int(count_photo)
-#         get_result(message)
-#     else:
-#         bot.send_message(message.chat.id, '<b>Ошибка!!</b>\nВведите корректное число фотографий(не более 10):',
-#                          parse_mode='html')
-#         bot.register_next_step_handler(message, get_count_photo)
+def get_images(id_num):
+
+    url = "https://hotels4.p.rapidapi.com/properties/v2/detail"
+
+    payload = {
+        "currency": "USD",
+        "eapid": 1,
+        "locale": "en_US",
+        "siteId": 300000001,
+        "propertyId": id_num
+    }
+
+    response = requests.request("POST", url, json=payload, headers=config.headers)
+    date_img = write_json(response)
+    img_str = [types.InputMediaPhoto(
+        date_img["data"]['propertyInfo']['propertyGallery']['images'][i_num]['image']['url'])
+        for i_num in range(result_find['Count_photo'])]
+    print(img_str)
+    return img_str
+
+
+def get_photo(message: telebot) -> None:
+
+    """ Функция, которая спрашивает сколько отелей отобразить в результате поиска """
+
+    if message.text.lower() == 'да':
+        result_find['Flag_Photos'] = True
+
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True). \
+            add(*(types.KeyboardButton(str(i_num)) for i_num in range(1, 11)), row_width=5)
+        back_key(markup)
+        bot.send_message(message.from_user.id, text='Сколько фото показать(max 5)?', reply_markup=markup)
+        bot.register_next_step_handler(message, get_count_photo)
+    elif message.text.lower() == 'нет':
+        result_find['Flag_Photos'] = False
+        get_result(message)
+    elif message.text == 'Назад':
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True). \
+            add(*(types.KeyboardButton(str(i_num)) for i_num in range(1, 11)), row_width=5)
+        back_key(markup)
+        bot.send_message(message.chat.id, text='Сколько отелей показать(max 10)?', reply_markup=markup)
+        bot.register_next_step_handler(message, get_count_hotel)
+    elif message.text == 'Главное меню':
+        get_menu(message)
+    else:
+        bot.send_message(message.chat.id, text='<b>Ошибка!!</b>\nНе верная команда!', parse_mode='html')
+        bot.register_next_step_handler(message, get_count_hotel)
+
+
+def get_count_photo(message: telebot) -> None:
+
+    """ Функция, которая спрашивает необходимо ли отобразить фото в результате поиска"""
+
+    if message.text.isdigit() and int(message.text) > 0:
+        count_photo = int(message.text)
+        if count_photo >= 5:
+            count_photo = 5
+
+        result_find['Count_photo'] = int(count_photo)
+        get_result(message)
+
+    elif message.text == 'Главное меню':
+        get_menu(message)
+
+    elif message.text == 'Назад':
+        keyboard: telebot = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+        key_yes: telebot = types.KeyboardButton(text='Да')
+        key_no: telebot = types.KeyboardButton(text='Нет')
+        keyboard.add(key_yes, key_no)
+        bot.send_message(message.chat.id, text='Результат поиска показать с фото?', reply_markup=keyboard)
+        bot.register_next_step_handler(message, get_photo)
+    else:
+        bot.send_message(message.chat.id, '<b>Ошибка!!</b>\nВведите корректное число фотографий(не более 5):',
+                         parse_mode='html')
+        bot.register_next_step_handler(message, get_count_photo)
+
 
 
 def get_result(message):
@@ -220,41 +313,67 @@ def get_result(message):
     print(result_find, '- result_find')
     bot.send_message(message.chat.id, text=f'<u>Подождите, идет загрузка...</u>',
                      reply_markup=types.ReplyKeyboardRemove(), parse_mode='html')
-    url_price = "https://hotels4.p.rapidapi.com/properties/list"
-    querystring_price = {"destinationId": result_find['DestinationId'], "pageNumber": "1",
-                               "pageSize": result_find['PageSize'], "checkIn": str(result_find['CheckIn']),
-                               "checkOut": str(result_find['CheckOut']), "adults1": result_find['Adults1'],
-                               "sortOrder": result_find['SortOrder'],
-                               "locale": result_find['language'][0],
-                               "currency": result_find['currency'][0]}
-    print(querystring_price, '- querystring_price')
-    response_price = requests.request("GET", url_price, headers=config.headers, params=querystring_price)
-    print(response_price, '- response_price')
-    date_price = write_json(response_price)
-    date_price = date_price["data"]["body"]["searchResults"]["results"]
+    url_price = "https://hotels4.p.rapidapi.com/properties/v2/list"
+    payload = {
+        "currency": "USD",
+        "eapid": 1,
+        "locale": "en_US",
+        "siteId": 300000001,
+        "destination": {"regionId": result_find['regionId']},
+        "checkInDate": {
+            "day": result_find['CheckIn'].day,
+            "month": result_find['CheckIn'].month,
+            "year": result_find['CheckIn'].year
+        },
+        "checkOutDate": {
+            "day": result_find['CheckOut'].day,
+            "month": result_find['CheckOut'].month,
+            "year": result_find['CheckOut'].year
+        },
+        "rooms": [{"adults": result_find['Adults']}],
+        "resultsStartingIndex": 0,
+        "resultsSize": result_find['PageSize'],
+        "sort": result_find['SortOrder'],
+        "filters": {"price": {
+            "max": 99999,
+            "min": 1
+        }}
+    }
+    print(payload, '- payload')
+
+    response = requests.request("POST", url_price, json=payload, headers=config.headers)
+    print(response, '- response_price')
+
+    date_price = write_json(response)
+    date_price = date_price["data"]["propertySearch"]["properties"]
 
     for i_hotel in date_price:
-        message_str = 'Отель: {hotel_name}\n' \
-                      'Адрес: {hotel_address}\n' \
-                      'Рейтинг {hotel_rating}\n' \
-                      'Удаленность от центра {hotel_distance}\n' \
-                      'Цена за ночь {price}\n' \
-                      'Цена за все время: {all_price}\n' \
-                      'Сайт: {website}'.format(
-                        hotel_name=i_hotel.get("name"),
-                        hotel_address=f'{i_hotel["address"]["locality"]}, '
-                                      f'{i_hotel["address"].get("streetAddress")}',
-                        hotel_rating=i_hotel.get("guestReviews", '-')["unformattedRating"],
-                        hotel_distance=i_hotel["landmarks"][0].get("distance"),
-                        price=str(result_find.get('currency')[1]) + str(int(''.join(re.findall(r'\d\S+',
-                        i_hotel["ratePlan"]["price"]["current"])).replace(',', ''))),
-                        all_price=str(result_find.get('currency')[1]) +
-                        str(int(''.join(re.findall(r'\d\S+', i_hotel["ratePlan"]["price"]["current"])).
-                                replace(',', '')) * result_find.get("Adults1")
-                        * int((result_find.get("CheckOut") - result_find.get("CheckIn")).days)),
-                        website='https://www.hotels.com/ho' + str(i_hotel["id"]))
+        address = get_address(i_hotel["id"])
+        message_str = '<b>Отель</b>: {hotel_name}\n' \
+                      '<b>Адрес</b>: {hotel_address}\n' \
+                      '<b>Рейтинг</b>: {hotel_rating}\\10 ★ \n' \
+                      '<b>Удаленность от центра</b>: {hotel_distance} miles\n' \
+                      '<b>Цена за ночь</b>: ${price}\n' \
+                      '<b>Цена за все время</b>: ${all_price}\n' \
+                      '<b>Сайт</b>: {website}'.format(
+                        hotel_name=i_hotel["name"],
+                        hotel_address=address,
+                        hotel_rating=i_hotel["reviews"]['score'],
+                        hotel_distance=i_hotel["destinationInfo"]['distanceFromDestination']['value'],
+                        price=round(i_hotel['price']['lead']['amount']),
+                        all_price=round(i_hotel['price']['lead']['amount'] *
+                                        result_find['Adults'] *
+                                        (int((result_find["CheckOut"] - result_find["CheckIn"]).days))),
+                        website='https://www.hotels.com')
 
-        bot.send_message(message.chat.id, message_str)
+        if result_find['Flag_Photos']:
+            media = get_images(i_hotel["id"])
+            bot.send_message(message.chat.id, message_str, parse_mode='html')
+            bot.send_media_group(message.chat.id, media)
+        elif not result_find['Flag_Photos']:
+            bot.send_message(message.chat.id, message_str, parse_mode='html')
+        else:
+            bot.send_message(message.chat.id, 'Произошла ошибка')
 
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton('ОК'))
     bot.send_message(message.chat.id, text=f'<b>Поиск завершен</b>', parse_mode='html', reply_markup=markup)
@@ -302,7 +421,7 @@ def command_lowprice(message):
 
     """ Функция для запуска команды /lowprice """
 
-    result_find['SortOrder'] = 'PRICE'
+    result_find['SortOrder'] = "PRICE_LOW_TO_HIGH"
 
     result_find['SortOrder_distance'] = False
 
