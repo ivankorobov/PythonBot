@@ -6,7 +6,6 @@ from datetime import date, timedelta
 import config
 import json
 import requests
-import re
 
 bot = telebot.TeleBot(config.TOKEN)
 
@@ -32,6 +31,66 @@ def write_json(date_j):
 
     date_j = json.loads(date_j.text)
     return date_j
+
+
+def check_from_to(message, func_name):
+
+    """ Функция для поверки и заполнения фильтра команды /bestdeal
+    :param message: сообщение из чата телеграмм, расстояние от центра или стоимость аренды: telebot
+    :param func_name: имя функции из которой вызывает эта функция: str
+    :return: возвращает False или True
+    :rtype bool
+    :except IndexError если значение до меньше чем значение от, то вызывается исключение
+    :except ValueError если знание message не является целым числом, то вызывается исключение """
+
+    name_key_d = func_name[4:]
+    print(name_key_d)
+    if func_name.startswith('get_distance'):
+        word_check = 'Радиус'
+    else:
+        word_check = 'Стоимость за ночь'
+
+    if func_name.endswith('from'):
+        from_flag = True
+        from_to = 'от'
+    else:
+        from_flag = False
+        from_to = 'до'
+
+    try:
+        message_convector = int(message.text)
+        try:
+            if message_convector >= 0:
+                if from_flag is False and name_key_d.startswith('distance'):
+                    if message_convector < result_find['distance_from']:
+                        bot.send_message(message.chat.id,
+                                         text=f'<b>Ошибка!!</b>\n{word_check} поиска "до" не может быть меньше '
+                                              f'чем "от"\nВведите {word_check.lower()} {from_to} которого '
+                                              f'искать еще раз', parse_mode='html')
+                        raise IndexError
+                elif from_flag is False and name_key_d.startswith('price'):
+                    if message_convector < result_find['price_from']:
+                        bot.send_message(message.chat.id,
+                                         text=f'<b>Ошибка!!</b>\n{word_check} поиска "до" не может быть меньше '
+                                              f'чем "от"\nВведите {word_check.lower()} {from_to} которого '
+                                              f'искать еще раз', parse_mode='html')
+                        raise IndexError
+                result_find[name_key_d] = message_convector
+                return True
+
+            else:
+                bot.send_message(message.chat.id,
+                                 text=f'<b>Ошибка!!</b>\n{word_check} поиска не может быть меньше 0\nВведите '
+                                      f'{word_check.lower()} {from_to} которого искать еще раз', parse_mode='html')
+                raise IndexError
+        except IndexError:
+            return False
+
+    except ValueError:
+        bot.send_message(message.chat.id, text=f'<b>Ошибка!!</b>\n{word_check} поиска должен быть числом\n'
+                                               f'Введите {word_check.lower()} {from_to} '
+                                               f'которого искать еще раз:', parse_mode='html')
+        return False
 
 
 def get_city(message):
@@ -87,7 +146,11 @@ def get_id_and_city(message, locations_and_id):
                 result_find['regionId'] = str(i_dict.get(message.text))
                 break
 
-        if result_find['SortOrder_distance'] is False:
+        if result_find['SortOrder_distance'] is True:
+            bot.send_message(message.chat.id, text=f'Искать в радиусе от (miles):',
+                             reply_markup=types.ReplyKeyboardRemove())
+            bot.register_next_step_handler(message, get_distance_from)
+        elif result_find['SortOrder_distance'] is False:
             bot.send_message(message.chat.id, text='Выберете дату заезда:', reply_markup=types.ReplyKeyboardRemove())
             check_in(message)
         else:
@@ -101,6 +164,86 @@ def get_id_and_city(message, locations_and_id):
     else:
         bot.send_message(message.chat.id, text='<b>Ошибка!!</b>\nВыберете город из списка!', parse_mode='html')
         bot.register_next_step_handler(message, get_id_and_city, locations_and_id)
+
+
+def get_distance_from(message):
+
+    """ Функция для установления значения от какого радиуса необходимо провести поиск отеля """
+
+    if message.text == 'Назад':
+        bot.send_message(message.chat.id, text='Введите название города:', reply_markup=types.ReplyKeyboardRemove())
+        bot.register_next_step_handler(message, get_city)
+    elif message.text == 'Главное меню':
+        get_menu(message)
+    elif check_from_to(message=message, func_name=get_distance_from.__name__):
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+        back_key(markup)
+        bot.send_message(message.chat.id, text=f'Искать в радиусе до (miles):',
+                         reply_markup=markup)
+        bot.register_next_step_handler(message, get_distance_to)
+    else:
+        bot.register_next_step_handler(message, get_distance_from)
+
+
+def get_distance_to(message):
+
+    """ Функция для установления значения до какого радиуса необходимо провести поиск отеля """
+
+    if message.text == 'Назад':
+        markup: telebot = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+        back_key(markup)
+        bot.send_message(message.chat.id, text=f'Искать в радиусе от (miles):',
+                         reply_markup=markup)
+        bot.register_next_step_handler(message, get_distance_from)
+    elif message.text == 'Главное меню':
+        get_menu(message)
+    elif check_from_to(message=message, func_name=get_distance_to.__name__):
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+        back_key(markup)
+        bot.send_message(message.chat.id, text=f'Искать в стоимости за ночь от (USD):',
+                         reply_markup=markup)
+        bot.register_next_step_handler(message, get_price_from)
+    else:
+        bot.register_next_step_handler(message, get_distance_to)
+
+
+def get_price_from(message):
+
+    """ Функция для установления значения минимальной стоимости ночи в отеле поиск отеля """
+
+    if message.text == 'Назад':
+        bot.send_message(message.chat.id, text=f'Искать в радиусе до (miles):')
+        bot.register_next_step_handler(message, get_distance_to)
+    elif message.text == 'Главное меню':
+        get_menu(message)
+    elif check_from_to(message=message, func_name=get_price_from.__name__):
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+        back_key(markup)
+        bot.send_message(message.chat.id, text=f'Искать в стоимости за ночь до (USD):',
+                         reply_markup=markup)
+        bot.register_next_step_handler(message, get_price_to)
+
+    else:
+        bot.register_next_step_handler(message, get_price_from)
+
+
+def get_price_to(message):
+
+    """ Функция для установления значения максимальной стоимости ночи в отеле поиск отеля"""
+
+    if message.text == 'Назад':
+        bot.send_message(message.chat.id, text=f'Искать в стоимости за ночь от (USD):',
+                         reply_markup=types.ReplyKeyboardRemove())
+        bot.register_next_step_handler(message, get_price_from)
+    elif message.text == 'Главное меню':
+        get_menu(message)
+    elif check_from_to(message=message, func_name=get_price_to.__name__):
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+        back_key(markup)
+        bot.send_message(message.chat.id, text=f'Выберете дату выезда:', reply_markup=markup)
+        check_in(message)
+    else:
+        bot.register_next_step_handler(message, get_price_to)
 
 
 def check_in(message):
@@ -190,9 +333,6 @@ def get_count_hotel(message):
         count_hotel: int = int(message.text)
         if count_hotel >= 10:
             count_hotel: int = 10
-        if result_find['SortOrder_distance'] is True:
-            result_find['Count_hotel_for'] = count_hotel
-            count_hotel = 100
         result_find['PageSize'] = int(count_hotel)
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         key_yes = types.KeyboardButton(text='Да')
@@ -347,9 +487,11 @@ def get_result(message):
         "filters": {
             "star": result_find['StarsCount']
         }
-
     }
 
+    if result_find['SortOrder_distance'] is True:
+        payload["filters"]["price"] = {"max": result_find['price_to'], "min": result_find['price_from']}
+        del payload["resultsSize"]
     print(payload, '- payload')
 
     response = requests.request("POST", url_price, json=payload, headers=config.headers)
@@ -358,7 +500,20 @@ def get_result(message):
     date_price = write_json(response)
     date_price = date_price["data"]["propertySearch"]["properties"]
 
-    for i_hotel in date_price:
+    if result_find['SortOrder_distance'] is True:
+        date_price = list(filter(lambda i_hotel_best:
+                                 result_find['distance_from'] <
+                                 i_hotel_best["destinationInfo"]['distanceFromDestination']['value'] <
+                                 result_find['distance_to'], date_price))
+
+    command_str = result_find['Command']
+    date_command: datetime.date = datetime.now().replace(microsecond=0).strftime("%H:%M:%S %d.%m.%Y")
+    hotel_str = [i_hotel["name"] for i_hotel in date_price[:result_find['PageSize']]]
+    history_list.append({'Command': command_str, 'Date_time': date_command, 'Hotel_list': hotel_str})
+
+    print(date_price, '- date_price')
+    print(len(date_price), '- len(date_price)')
+    for i_hotel in date_price[:result_find['PageSize']]:
         address = get_address(i_hotel["id"])
         message_str = '<b>Отель</b>: {hotel_name}\n' \
                       '<b>Адрес</b>: {hotel_address}\n' \
@@ -385,7 +540,9 @@ def get_result(message):
             bot.send_message(message.chat.id, message_str, parse_mode='html')
         else:
             bot.send_message(message.chat.id, 'Произошла ошибка')
-
+    if len(date_price) < result_find['PageSize']:
+        bot.send_message(message.chat.id, text=f'<b>Это все предложения, которые нам удалось найти для вас</b>',
+                         parse_mode='html')
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton('ОК'))
     bot.send_message(message.chat.id, text=f'<b>Поиск завершен</b>', parse_mode='html', reply_markup=markup)
 
@@ -443,11 +600,9 @@ def command_lowprice(message):
     result_find['SortOrder'] = "PRICE_LOW_TO_HIGH"
     result_find['StarsCount'] = ["10", "20", "30", "40", "50"]
     result_find['SortOrder_distance'] = False
-
     result_find['Command'] = message.text
-    print(result_find['Command'])
-    bot.send_message(message.chat.id, text='Введите название города')
 
+    bot.send_message(message.chat.id, text='Введите название города')
     bot.register_next_step_handler(message, get_city)
 
 
@@ -459,11 +614,9 @@ def command_highprice(message):
     result_find['SortOrder'] = "PRICE_HIGH_TO_LOW"
     result_find['StarsCount'] = ["50"]
     result_find['SortOrder_distance'] = False
-
     result_find['Command'] = message.text
-    print(result_find['Command'])
-    bot.send_message(message.chat.id, text='Введите название города')
 
+    bot.send_message(message.chat.id, text='Введите название города')
     bot.register_next_step_handler(message, get_city)
 
 
@@ -472,7 +625,13 @@ def command_bestdeal(message):
 
     """ Функция для запуска команды /bestdeal """
 
-    bot.send_message(message.chat.id, text='/bestdeal команда!')
+    result_find['SortOrder'] = "DISTANCE"
+    result_find['StarsCount'] = ["10", "20", "30", "40", "50"]
+    result_find['SortOrder_distance'] = True
+    result_find['Command'] = message.text
+
+    bot.send_message(message.chat.id, text='Введите название города')
+    bot.register_next_step_handler(message, get_city)
 
 
 @bot.message_handler(commands=['history'])
@@ -480,7 +639,17 @@ def command_history(message):
 
     """ Функция для запуска команды /history """
 
-    bot.send_message(message.chat.id, text='/history команда!')
+    bot.send_message(message.chat.id, text=f'<u>История поиска:</u>', parse_mode='html')
+    history_str = ''
+    for i_num, index_history in enumerate(history_list):
+        history_str += f'#{i_num + 1}\n'\
+                       f'Время и дата: {str(index_history.get("Date_time"))}\n'\
+                       f'Команда: {index_history.get("Command")}\n'\
+                       f'Список отелей: {str(index_history.get("Hotel_list"))}\n\n'
+    if history_str == '':
+        bot.send_message(message.chat.id, text='Вы ничего не искали.\nИстория поиска пуста.')
+    else:
+        bot.send_message(message.chat.id, text=history_str)
 
 
 @bot.message_handler(content_types=['text'])
