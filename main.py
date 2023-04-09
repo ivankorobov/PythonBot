@@ -1,4 +1,5 @@
 from loader import bot
+import handlers
 
 history_list = list()
 result_find = dict()

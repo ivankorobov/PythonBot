@@ -3,8 +3,7 @@ from loader import bot
 from main import result_find
 from handlers.side_functions import get_menu
 from handlers.api import get_city
-from date_range import check_in
-from distance_range import get_distance_from
+from handlers.hotel_handlers import check_in, get_distance_from
 
 
 def get_id_and_city(message, locations_and_id):

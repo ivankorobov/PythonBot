@@ -1,5 +1,5 @@
 from loader import bot
-from handlers.side_functions.menu import get_menu
+from handlers.side_functions import get_menu
 
 
 @bot.message_handler(commands=['start', 'hello'])

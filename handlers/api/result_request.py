@@ -5,7 +5,7 @@ import config
 from loader import bot
 from main import result_find, history_list
 from handlers.side_functions import write_json, find_end
-from handlers.api.detail_request import get_images, get_address
+from handlers.api import get_images, get_address
 
 
 def get_result(message):
