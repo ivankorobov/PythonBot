@@ -1,14 +1,14 @@
 from loader import bot
 from main import result_find
-from handlers.api import get_city
+from handlers.commands.lowprice_highprice import get_city
 
 
-@bot.message_handler(commands=['highprice'])
-def command_highprice(message):
-    """ Функция для запуска команды /highprice """
+@bot.message_handler(commands=['lowprice'])
+def command_lowprice(message):
+    """ Функция для запуска команды /lowprice """
 
     result_find['SortOrder'] = "PRICE_LOW_TO_HIGH"
-    result_find['StarsCount'] = ["50"]
+    result_find['StarsCount'] = ["10", "20", "30", "40", "50"]
     result_find['SortOrder_distance'] = False
     result_find['Command'] = message.text
 

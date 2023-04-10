@@ -1,15 +1,15 @@
 from loader import bot
 from main import result_find
-from handlers.api import get_city
+from handlers.commands.bestdeal_chk import get_city
 
 
-@bot.message_handler(commands=['lowprice'])
-def command_lowprice(message):
-    """ Функция для запуска команды /lowprice """
+@bot.message_handler(commands=['bestdeal'])
+def command_bestdeal(message):
+    """ Функция для запуска команды /bestdeal """
 
-    result_find['SortOrder'] = "PRICE_LOW_TO_HIGH"
+    result_find['SortOrder'] = "DISTANCE"
     result_find['StarsCount'] = ["10", "20", "30", "40", "50"]
-    result_find['SortOrder_distance'] = False
+    result_find['SortOrder_distance'] = True
     result_find['Command'] = message.text
 
     bot.send_message(message.chat.id, text='Введите название города')

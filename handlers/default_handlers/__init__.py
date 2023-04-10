@@ -1,3 +1,8 @@
-from echo import handler_text
-from help import command_help
-from start import command_start
+from . import lowprice
+from . import bestdeal
+from . import history
+from . import highprice
+from . import help
+from . import start
+from . import echo
+
