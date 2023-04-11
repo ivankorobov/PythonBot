@@ -1,6 +1,6 @@
 from loader import bot
 from main import result_find
-from handlers.commands.bestdeal_chk import get_city
+from handlers.commands.common_chk import get_city
 
 
 @bot.message_handler(commands=['bestdeal'])

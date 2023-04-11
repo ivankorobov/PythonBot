@@ -1,3 +1,4 @@
+import time
 import telebot
 from telebot import types
 from telegram_bot_calendar import DetailedTelegramCalendar
@@ -6,18 +7,9 @@ from datetime import date, timedelta
 from loader import bot
 from api_requests.api_req import result_req, get_address, get_images, get_locations_and_id
 from handlers.default_handlers.start import get_menu
+from handlers.commands.menu_fncs import back_key, find_end
+from handlers.commands.bestdeal_chk import get_distance_from
 from main import result_find, history_list, my_step_time
-
-
-def key_menu(message):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
-    markup.add(types.KeyboardButton('Главное меню'))
-    bot.send_message(message.chat.id, text='Введите название города', reply_markup=markup)
-
-
-def back_key(markup):
-    markup.add(types.KeyboardButton('Назад'))
-    markup.add(types.KeyboardButton('Главное меню'))
 
 
 def get_city(message):
@@ -56,9 +48,21 @@ def get_id_and_city(message, locations_and_id):
                 result_find['regionId'] = str(i_dict.get(message.text))
                 break
 
-        bot.send_message(message.chat.id, text='Выберете дату заезда:', reply_markup=types.ReplyKeyboardRemove())
-        check_in(message)
-
+        if result_find['SortOrder_distance'] is True:
+            bot.send_message(message.chat.id, text=f'Искать в радиусе от (miles):',
+                             reply_markup=types.ReplyKeyboardRemove())
+            result_find['Wait'] = True
+            bot.register_next_step_handler(message, get_distance_from)
+            while result_find['Wait']:
+                time.sleep(1)
+            else:
+                check_in(message)
+        elif result_find['SortOrder_distance'] is False:
+            bot.send_message(message.chat.id, text='Выберете дату заезда:', reply_markup=types.ReplyKeyboardRemove())
+            check_in(message)
+        else:
+            bot.send_message(message.chat.id, text='<b>Ошибка!!</b>', parse_mode='html')
+            get_menu(message)
     elif message.text == 'Назад':
         bot.send_message(message.chat.id, 'Введите название города.', reply_markup=types.ReplyKeyboardRemove())
         bot.register_next_step_handler(message, get_city)
@@ -160,7 +164,6 @@ def get_count_hotel(message):
         back_key(markup)
         bot.send_message(message.chat.id, text='Результат поиска показать с фото?', reply_markup=markup)
         bot.register_next_step_handler(message, get_photo)
-
     elif message.text == 'Назад':
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True). \
             add(*(types.KeyboardButton(str(i_num)) for i_num in range(1, 9)), row_width=4)
@@ -176,11 +179,11 @@ def get_count_hotel(message):
 
 
 def get_photo(message):
+
     """ Функция спрашивает сколько отелей отобразить вместе с отелем """
 
     if message.text.lower() == 'да':
         result_find['Flag_Photos'] = True
-
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True). \
             add(*(types.KeyboardButton(str(i_num)) for i_num in range(1, 6)), row_width=3)
         back_key(markup)
@@ -209,13 +212,10 @@ def get_count_photo(message):
         count_photo = int(message.text)
         if count_photo >= 5:
             count_photo = 5
-
         result_find['Count_photo'] = int(count_photo)
         get_result(message)
-
     elif message.text == 'Главное меню':
         get_menu(message)
-
     elif message.text == 'Назад':
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         key_yes = types.KeyboardButton(text='Да')
@@ -237,62 +237,65 @@ def get_result(message):
 
     date_price = result_req()
 
-    if date_price is False:
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton('Главное меню'))
-        bot.send_message(message.chat.id, text=f'<b>По вашим критериям не нашлось ни одного подходящего отеля</b>',
+    if date_price["data"]:
+        date_price = date_price["data"]["propertySearch"]["properties"]
+        if result_find['SortOrder_distance'] is True:
+            date_price = list(filter(lambda i_hotel_best:
+                                     result_find['distance_from'] <
+                                     i_hotel_best["destinationInfo"]['distanceFromDestination']['value'] <
+                                     result_find['distance_to'], date_price))
+
+        if result_find['Command'] == '/highprice':
+            date_price = list(filter(lambda i_hotel_best:
+                                     0 < i_hotel_best['price']['lead']['amount'], date_price))
+            date_price = sorted(date_price, key=lambda elem: (elem['price']['lead']['amount']), reverse=True)
+
+        command_str = result_find['Command']
+        date_command: datetime.date = datetime.now().replace(microsecond=0).strftime("%H:%M:%S %d.%m.%Y")
+        hotel_str = [i_hotel["name"] for i_hotel in date_price[:result_find['PageSize']]]
+        history_list.append({'Command': command_str, 'Date_time': date_command, 'Hotel_list': hotel_str})
+
+        for i_hotel in date_price[:result_find['PageSize']]:
+            address = get_address(i_hotel["id"])
+            message_str = '<b>Отель</b>: {hotel_name}\n' \
+                          '<b>Адрес</b>: {hotel_address}\n' \
+                          '<b>Рейтинг</b>: {hotel_rating}\\10 ★ \n' \
+                          '<b>Удаленность от центра</b>: {hotel_distance} miles\n' \
+                          '<b>Цена за ночь</b>: ${price}\n' \
+                          '<b>Цена за все время</b>: ${all_price}\n' \
+                          '<b>Сайт</b>: {website}'.format(
+                            hotel_name=i_hotel["name"],
+                            hotel_address=address,
+                            hotel_rating=i_hotel["reviews"]['score'],
+                            hotel_distance=i_hotel["destinationInfo"]['distanceFromDestination']['value'],
+                            price=round(i_hotel['price']['lead']['amount']),
+                            all_price=round(i_hotel['price']['lead']['amount'] *
+                                            result_find['Adults'] *
+                                            (int((result_find["CheckOut"] - result_find["CheckIn"]).days))),
+                            website=f'https://www.hotels.com/h{i_hotel["id"]}.Hotel-Information')
+
+            if result_find['Flag_Photos']:
+                media = get_images(i_hotel["id"])
+                bot.send_message(message.chat.id, message_str, parse_mode='html')
+                bot.send_media_group(message.chat.id, media)
+            elif not result_find['Flag_Photos']:
+                bot.send_message(message.chat.id, message_str, parse_mode='html')
+            else:
+                bot.send_message(message.chat.id, 'Произошла ошибка')
+
+        if len(date_price) == 0:
+            bot.send_message(message.chat.id, text=f'<b>По вашим критериям не нашлось ни одного подходящего отеля</b>',
+                             parse_mode='html')
+        elif len(date_price) < result_find['PageSize']:
+            bot.send_message(message.chat.id, text=f'<b>Это все предложения, которые нам удалось найти для вас</b>',
+                             parse_mode='html')
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton('ОК'))
+        bot.send_message(message.chat.id, text=f'<b>Поиск завершен</b>', parse_mode='html', reply_markup=markup)
+        bot.register_next_step_handler(message, find_end)
+    else:
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton('ОК'))
+        bot.send_message(message.chat.id, text=f'<b>По вашим критериям не нашлось ни одного подходящего отеля\n'
+                                               f'Попробуйте задать другие параметры поиска</b>',
                          parse_mode='html', reply_markup=markup)
         bot.register_next_step_handler(message, find_end)
 
-    if result_find['Command'] == '/highprice':
-        date_price = list(filter(lambda i_hotel_best:
-                                 0 < i_hotel_best['price']['lead']['amount'], date_price))
-        date_price = sorted(date_price, key=lambda elem: (elem['price']['lead']['amount']), reverse=True)
-
-    command_str = result_find['Command']
-    date_command: datetime.date = datetime.now().replace(microsecond=0).strftime("%H:%M:%S %d.%m.%Y")
-    hotel_str = [i_hotel["name"] for i_hotel in date_price[:result_find['PageSize']]]
-    history_list.append({'Command': command_str, 'Date_time': date_command, 'Hotel_list': hotel_str})
-
-    for i_hotel in date_price[:result_find['PageSize']]:
-        address = get_address(i_hotel["id"])
-        message_str = '<b>Отель</b>: {hotel_name}\n' \
-                      '<b>Адрес</b>: {hotel_address}\n' \
-                      '<b>Рейтинг</b>: {hotel_rating}\\10 ★ \n' \
-                      '<b>Удаленность от центра</b>: {hotel_distance} miles\n' \
-                      '<b>Цена за ночь</b>: ${price}\n' \
-                      '<b>Цена за все время</b>: ${all_price}\n' \
-                      '<b>Сайт</b>: {website}'.format(
-                        hotel_name=i_hotel["name"],
-                        hotel_address=address,
-                        hotel_rating=i_hotel["reviews"]['score'],
-                        hotel_distance=i_hotel["destinationInfo"]['distanceFromDestination']['value'],
-                        price=round(i_hotel['price']['lead']['amount']),
-                        all_price=round(i_hotel['price']['lead']['amount'] *
-                                        result_find['Adults'] *
-                                        (int((result_find["CheckOut"] - result_find["CheckIn"]).days))),
-                        website=f'https://www.hotels.com/h{i_hotel["id"]}.Hotel-Information')
-
-        if result_find['Flag_Photos']:
-            media = get_images(i_hotel["id"])
-            bot.send_message(message.chat.id, message_str, parse_mode='html')
-            bot.send_media_group(message.chat.id, media)
-        elif not result_find['Flag_Photos']:
-            bot.send_message(message.chat.id, message_str, parse_mode='html')
-        else:
-            bot.send_message(message.chat.id, 'Произошла ошибка')
-
-    if len(date_price) == 0:
-        bot.send_message(message.chat.id, text=f'<b>По вашим критериям не нашлось ни одного подходящего отеля</b>',
-                         parse_mode='html')
-    elif len(date_price) < result_find['PageSize']:
-        bot.send_message(message.chat.id, text=f'<b>Это все предложения, которые нам удалось найти для вас</b>',
-                         parse_mode='html')
-
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton('ОК'))
-    bot.send_message(message.chat.id, text=f'<b>Поиск завершен</b>', parse_mode='html', reply_markup=markup)
-
-    bot.register_next_step_handler(message, find_end)
-
-
-def find_end(message):
-    get_menu(message)

@@ -82,6 +82,7 @@ def result_req():
             "star": result_find['StarsCount']
         }
     }
+
     if result_find['Command'] == '/highprice':
         payload["resultsSize"] = 200
     if result_find['SortOrder_distance'] is True:
@@ -89,6 +90,5 @@ def result_req():
         del payload["resultsSize"]
     response = requests.request("POST", url_price, json=payload, headers=config.headers)
     date_price = json.loads(response.text)
-    date_price = date_price["data"]["propertySearch"]["properties"]
 
     return date_price
